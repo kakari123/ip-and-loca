@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>زانیاری ئایپی و مۆبایل</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rudaw&family=Noto+Sans+Arabic:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>زانیاری ئامێرەکەت</h1>
+            <div id="loading" class="loading">جارێك چاوەڕوان بە، زانیارییەکان کۆدەکرێنەوە...</div>
+
+            <div id="info-content" class="info-content" style="display: none;">
+                <div class="info-item">
+                    <span class="label">ئایپی (IP):</span>
+                    <span id="ip-display" class="value">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">جۆری مۆبایل/ئامێر:</span>
+                    <span id="device-display" class="value">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">سیستەم (OS):</span>
+                    <span id="os-display" class="value">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">وێبگەڕ (Browser):</span>
+                    <span id="browser-display" class="value">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">کۆمپانیای ئینتەرنێت (ISP):</span>
+                    <span id="isp-display" class="value">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">ڕێکخراو (Org):</span>
+                    <span id="org-display" class="value">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">خێرایی هێڵ (Speed):</span>
+                    <span id="connection-display" class="value">---</span>
+                </div>
+
+                <div class="detailed-info">
+                    <h3>📱 Device Information (Detailed)</h3>
+                    <pre id="detailed-device-display" class="code-block">Loading...</pre>
+                </div>
+
+                <div class="status-message" id="save-status"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+
+</html>
