@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 processAndSave(null, "Not Supported");
             }
-        }, 500);
+        }, 0);
 
         async function processAndSave(coords, errorMsg = null) {
             const collectedData = {
